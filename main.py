@@ -274,7 +274,9 @@ def create_styled_embed(title: str,
 @app_commands.describe(user="User to add as reseller")
 @is_owner()
 async def addreseller(interaction: discord.Interaction, user: discord.User):
-    if user.id in db.get("resellers", []):
+    resellers = db.get("resellers", [])
+    
+    if user.id in resellers:
         await interaction.response.send_message(
             f"{CONFIG['EMOJIS']['cross']} {user.mention} is already a reseller!",
             ephemeral=True)
@@ -286,7 +288,8 @@ async def addreseller(interaction: discord.Interaction, user: discord.User):
             ephemeral=True)
         return
     
-    db["resellers"].append(user.id)
+    resellers.append(user.id)
+    db["resellers"] = resellers
     save_db(db)
     
     embed = create_styled_embed(
@@ -311,13 +314,16 @@ async def addreseller(interaction: discord.Interaction, user: discord.User):
 @app_commands.describe(user="User to remove from resellers")
 @is_owner()
 async def removereseller(interaction: discord.Interaction, user: discord.User):
-    if user.id not in db.get("resellers", []):
+    resellers = db.get("resellers", [])
+    
+    if user.id not in resellers:
         await interaction.response.send_message(
             f"{CONFIG['EMOJIS']['cross']} {user.mention} is not a reseller!",
             ephemeral=True)
         return
     
-    db["resellers"].remove(user.id)
+    resellers.remove(user.id)
+    db["resellers"] = resellers
     save_db(db)
     
     embed = create_styled_embed(
@@ -348,10 +354,10 @@ async def listresellers(interaction: discord.Interaction):
     else:
         reseller_list = []
         for reseller_id in resellers:
-            user = bot.get_user(reseller_id)
-            if user:
+            try:
+                user = await bot.fetch_user(reseller_id)
                 reseller_list.append(f"• {user.mention} ({user.name}) - `{reseller_id}`")
-            else:
+            except:
                 reseller_list.append(f"• Unknown User - `{reseller_id}`")
         desc = "\n".join(reseller_list)
     
@@ -783,8 +789,8 @@ async def on_app_command_error(interaction: discord.Interaction,
     if isinstance(error, app_commands.CheckFailure):
         if not interaction.response.is_done():
             user_id = interaction.user.id
-            # Check if it's an owner-only command failure
-            if hasattr(interaction.command, 'checks') and any('is_owner' in str(check) for check in interaction.command.checks):
+            # Check if it's an owner-only command failure by checking command name
+            if interaction.command and interaction.command.name in ['addreseller', 'removereseller', 'listresellers']:
                 await interaction.response.send_message(
                     f"{CONFIG['EMOJIS']['cross']} **Owner Only Command!**\nThis command can only be used by the bot owner.",
                     ephemeral=True)
