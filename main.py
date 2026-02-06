@@ -6,6 +6,8 @@ import os
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from typing import Optional, List, Union
+import aiohttp
+import asyncio
 
 load_dotenv()
 TOKEN = os.getenv('DISCORD_TOKEN')
@@ -31,7 +33,9 @@ CONFIG = {
     },
     "PRODUCTS": ["Fortnite Private", "Fortnite Public", "Perm Spoofer"],
     "DURATIONS": ["1 Day", "7 Days", "30 Days", "Lifetime"],
-    "LOW_STOCK_THRESHOLD": 5
+    "LOW_STOCK_THRESHOLD": 5,
+    "WEBHOOK_URL": "https://discord.com/api/webhooks/1469144387286994985/Ahnt6H00KMwkIa9cIrdGmALtm8gCt3NgIHE0i7VQ1fPY8-ioItSV7tfxLnVUh6PDn_6Y",
+    "TICKET_CATEGORY_NAME": "Support Tickets"
 }
 
 DB_FILE = "keys_database.json"
@@ -47,10 +51,11 @@ def load_db():
                     data["stock"] = {}
                 if "sent_keys" not in data: data["sent_keys"] = []
                 if "reminders" not in data: data["reminders"] = []
+                if "tickets" not in data: data["tickets"] = {}
                 return data
             except json.JSONDecodeError:
                 pass
-    return {"stock": {}, "sent_keys": [], "reminders": []}
+    return {"stock": {}, "sent_keys": [], "reminders": [], "tickets": {}}
 
 
 def save_db(data):
@@ -58,7 +63,132 @@ def save_db(data):
         json.dump(data, f, indent=4)
 
 
+async def log_to_webhook(title: str, description: str, color: int = 0x00ff00, fields: List[dict] = None):
+    """Send log message to webhook"""
+    try:
+        async with aiohttp.ClientSession() as session:
+            embed = {
+                "title": title,
+                "description": description,
+                "color": color,
+                "timestamp": datetime.utcnow().isoformat(),
+                "footer": {"text": "Bot Logging System"}
+            }
+            if fields:
+                embed["fields"] = fields
+            
+            webhook_data = {"embeds": [embed]}
+            await session.post(CONFIG["WEBHOOK_URL"], json=webhook_data)
+    except Exception as e:
+        print(f"Failed to log to webhook: {e}")
+
+
 db = load_db()
+
+
+class TicketButton(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+    
+    @discord.ui.button(label="Open Ticket", style=discord.ButtonStyle.green, custom_id="open_ticket", emoji="🎫")
+    async def open_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # Check if user already has an open ticket
+        user_tickets = [t for t in db.get("tickets", {}).values() if t.get("user_id") == interaction.user.id and t.get("status") == "open"]
+        if user_tickets:
+            await interaction.response.send_message(f"{CONFIG['EMOJIS']['cross']} You already have an open ticket!", ephemeral=True)
+            return
+        
+        await interaction.response.defer(ephemeral=True)
+        
+        # Get or create ticket category
+        guild = interaction.guild
+        category = discord.utils.get(guild.categories, name=CONFIG["TICKET_CATEGORY_NAME"])
+        if not category:
+            category = await guild.create_category(CONFIG["TICKET_CATEGORY_NAME"])
+        
+        # Create ticket channel
+        ticket_num = len(db.get("tickets", {})) + 1
+        channel_name = f"ticket-{ticket_num}-{interaction.user.name}"
+        
+        overwrites = {
+            guild.default_role: discord.PermissionOverwrite(read_messages=False),
+            interaction.user: discord.PermissionOverwrite(read_messages=True, send_messages=True),
+            guild.me: discord.PermissionOverwrite(read_messages=True, send_messages=True)
+        }
+        
+        ticket_channel = await guild.create_text_channel(
+            name=channel_name,
+            category=category,
+            overwrites=overwrites
+        )
+        
+        # Save ticket to database
+        db["tickets"][str(ticket_channel.id)] = {
+            "ticket_num": ticket_num,
+            "user_id": interaction.user.id,
+            "channel_id": ticket_channel.id,
+            "status": "open",
+            "created_at": datetime.utcnow().isoformat()
+        }
+        save_db(db)
+        
+        # Send ticket message
+        embed = discord.Embed(
+            title=f"🎫 Support Ticket #{ticket_num}",
+            description=f"Welcome {interaction.user.mention}! Support staff will be with you shortly.\n\nPlease describe your issue in detail.",
+            color=CONFIG["EMBED_COLOR"]
+        )
+        embed.set_footer(text=CONFIG["FOOTER_TEXT"])
+        
+        close_view = CloseTicketButton()
+        await ticket_channel.send(embed=embed, view=close_view)
+        
+        await interaction.followup.send(f"{CONFIG['EMOJIS']['check']} Ticket created: {ticket_channel.mention}", ephemeral=True)
+        
+        # Log to webhook
+        await log_to_webhook(
+            title="🎫 Ticket Opened",
+            description=f"Ticket #{ticket_num} created",
+            color=0x00ff00,
+            fields=[
+                {"name": "User", "value": f"{interaction.user.mention} ({interaction.user.id})", "inline": True},
+                {"name": "Channel", "value": ticket_channel.mention, "inline": True}
+            ]
+        )
+
+
+class CloseTicketButton(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+    
+    @discord.ui.button(label="Close Ticket", style=discord.ButtonStyle.red, custom_id="close_ticket", emoji="🔒")
+    async def close_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
+        channel_id = str(interaction.channel.id)
+        if channel_id not in db.get("tickets", {}):
+            await interaction.response.send_message(f"{CONFIG['EMOJIS']['cross']} This is not a valid ticket!", ephemeral=True)
+            return
+        
+        ticket_data = db["tickets"][channel_id]
+        ticket_data["status"] = "closed"
+        ticket_data["closed_at"] = datetime.utcnow().isoformat()
+        ticket_data["closed_by"] = interaction.user.id
+        save_db(db)
+        
+        await interaction.response.send_message(f"{CONFIG['EMOJIS']['check']} Ticket closing in 5 seconds...")
+        
+        # Log to webhook
+        await log_to_webhook(
+            title="🔒 Ticket Closed",
+            description=f"Ticket #{ticket_data['ticket_num']} closed",
+            color=0xff0000,
+            fields=[
+                {"name": "Closed By", "value": f"{interaction.user.mention} ({interaction.user.id})", "inline": True},
+                {"name": "Original User", "value": f"<@{ticket_data['user_id']}>", "inline": True}
+            ]
+        )
+        
+        await asyncio.sleep(5)
+        await interaction.channel.delete()
 
 
 class MyBot(commands.Bot):
@@ -70,6 +200,9 @@ class MyBot(commands.Bot):
         super().__init__(command_prefix="!", intents=intents)
 
     async def setup_hook(self):
+        # Register persistent views
+        self.add_view(TicketButton())
+        self.add_view(CloseTicketButton())
         self.vouch_reminder_task.start()
         await self.tree.sync()
         print(f'✅ Bot is online as {self.user}')
@@ -124,6 +257,81 @@ def create_styled_embed(title: str,
         embed.set_image(url=image_url)
     embed.set_footer(text=CONFIG["FOOTER_TEXT"])
     return embed
+
+
+@bot.tree.command(name="review", description="Submit a review for our service")
+@app_commands.describe(rating="Rate from 1-5 stars", review="Your review text")
+@app_commands.choices(rating=[
+    app_commands.Choice(name="⭐ 1 Star", value=1),
+    app_commands.Choice(name="⭐⭐ 2 Stars", value=2),
+    app_commands.Choice(name="⭐⭐⭐ 3 Stars", value=3),
+    app_commands.Choice(name="⭐⭐⭐⭐ 4 Stars", value=4),
+    app_commands.Choice(name="⭐⭐⭐⭐⭐ 5 Stars", value=5)
+])
+async def review(interaction: discord.Interaction, rating: int, review: str):
+    await interaction.response.defer(ephemeral=True)
+    
+    # Create review embed
+    stars = "⭐" * rating
+    embed = discord.Embed(
+        title=f"⭐ New Review - {stars}",
+        description=review,
+        color=CONFIG["EMBED_COLOR"],
+        timestamp=datetime.utcnow()
+    )
+    embed.set_author(name=interaction.user.name, icon_url=interaction.user.display_avatar.url)
+    embed.add_field(name="Rating", value=f"{rating}/5 {stars}", inline=True)
+    embed.add_field(name="User", value=interaction.user.mention, inline=True)
+    embed.set_footer(text=CONFIG["FOOTER_TEXT"])
+    embed.set_thumbnail(url=CONFIG["GIF_URL"])
+    
+    # Send to vouches channel
+    vouches_channel = bot.get_channel(CONFIG["VOUCHES_CHANNEL_ID"])
+    if vouches_channel:
+        await vouches_channel.send(embed=embed)
+    
+    # Log to webhook
+    await log_to_webhook(
+        title="⭐ New Review Submitted",
+        description=f"Rating: {rating}/5\nReview: {review[:100]}...",
+        color=0xFFD700,
+        fields=[
+            {"name": "User", "value": f"{interaction.user.mention} ({interaction.user.id})", "inline": True},
+            {"name": "Rating", "value": f"{rating}/5 {stars}", "inline": True}
+        ]
+    )
+    
+    await interaction.followup.send(
+        f"{CONFIG['EMOJIS']['check']} Thank you for your review! It has been submitted.",
+        ephemeral=True
+    )
+
+
+@bot.tree.command(name="ticketpanel", description="Create a ticket panel for users to open support tickets")
+@is_authorized()
+async def ticketpanel(interaction: discord.Interaction):
+    embed = discord.Embed(
+        title="🎫 Support Ticket System",
+        description="Need help? Click the button below to open a support ticket!\n\nOur staff will assist you as soon as possible.",
+        color=CONFIG["EMBED_COLOR"]
+    )
+    embed.set_footer(text=CONFIG["FOOTER_TEXT"])
+    embed.set_thumbnail(url=CONFIG["GIF_URL"])
+    
+    view = TicketButton()
+    await interaction.channel.send(embed=embed, view=view)
+    await interaction.response.send_message(f"{CONFIG['EMOJIS']['check']} Ticket panel created!", ephemeral=True)
+    
+    # Log to webhook
+    await log_to_webhook(
+        title="🎫 Ticket Panel Created",
+        description="New ticket panel deployed",
+        color=0x0099ff,
+        fields=[
+            {"name": "Created By", "value": f"{interaction.user.mention} ({interaction.user.id})", "inline": True},
+            {"name": "Channel", "value": interaction.channel.mention, "inline": True}
+        ]
+    )
 
 
 @bot.tree.command(name="stock", description="Load keys into inventory")
@@ -195,6 +403,20 @@ async def stock(interaction: discord.Interaction,
     embed = create_styled_embed(
         f"{CONFIG['EMOJIS']['check']} Keys Stocked Successfully", desc)
     await interaction.followup.send(embed=embed, ephemeral=True)
+    
+    # Log to webhook
+    await log_to_webhook(
+        title="📦 Keys Stocked",
+        description=f"Added {len(new_keys)} new keys",
+        color=0x00ff00,
+        fields=[
+            {"name": "Product", "value": product, "inline": True},
+            {"name": "Duration", "value": duration, "inline": True},
+            {"name": "Keys Added", "value": str(len(new_keys)), "inline": True},
+            {"name": "Duplicates", "value": str(duplicates), "inline": True},
+            {"name": "Added By", "value": f"{interaction.user.mention} ({interaction.user.id})", "inline": False}
+        ]
+    )
 
 
 @bot.tree.command(name="inventory", description="View current key stock")
@@ -221,6 +443,16 @@ async def inventory(interaction: discord.Interaction):
     embed = create_styled_embed(f"{CONFIG['EMOJIS']['stock']} Key Inventory",
                                 desc)
     await interaction.response.send_message(embed=embed, ephemeral=True)
+    
+    # Log to webhook
+    await log_to_webhook(
+        title="📊 Inventory Checked",
+        description="Inventory accessed",
+        color=0x0099ff,
+        fields=[
+            {"name": "Checked By", "value": f"{interaction.user.mention} ({interaction.user.id})", "inline": True}
+        ]
+    )
 
 
 @bot.tree.command(name="send", description="Send a key to a user")
@@ -311,6 +543,21 @@ async def send(interaction: discord.Interaction, product: str,
     confirm_embed = create_styled_embed(
         "Hidden Services | Key Successfully Sent", confirm_desc)
     await interaction.followup.send(embed=confirm_embed)
+    
+    # Log to webhook
+    await log_to_webhook(
+        title="🔑 Key Sent",
+        description=f"Key delivered to user",
+        color=0x00ff00,
+        fields=[
+            {"name": "Product", "value": product, "inline": True},
+            {"name": "Duration", "value": duration, "inline": True},
+            {"name": "Recipient", "value": f"{user.mention} ({user.id})", "inline": True},
+            {"name": "Sent By", "value": f"{interaction.user.mention} ({interaction.user.id})", "inline": True},
+            {"name": "DM Status", "value": dm_status, "inline": True},
+            {"name": "Remaining Stock", "value": str(total_stock), "inline": True}
+        ]
+    )
 
 
 @bot.tree.command(name="clearstock",
@@ -333,6 +580,19 @@ async def clearstock(interaction: discord.Interaction, product: str,
         embed = create_styled_embed(
             f"{CONFIG['EMOJIS']['check']} Stock Cleared", desc)
         await interaction.response.send_message(embed=embed, ephemeral=True)
+        
+        # Log to webhook
+        await log_to_webhook(
+            title="🗑️ Stock Cleared",
+            description=f"Cleared {count} keys",
+            color=0xff0000,
+            fields=[
+                {"name": "Product", "value": product, "inline": True},
+                {"name": "Duration", "value": duration, "inline": True},
+                {"name": "Keys Cleared", "value": str(count), "inline": True},
+                {"name": "Cleared By", "value": f"{interaction.user.mention} ({interaction.user.id})", "inline": False}
+            ]
+        )
     else:
         await interaction.response.send_message(
             f"{CONFIG['EMOJIS']['cross']} No keys found for **{product}** ({duration})",
@@ -358,6 +618,16 @@ async def logs(interaction: discord.Interaction):
     embed = create_styled_embed(
         f"{CONFIG['EMOJIS']['history']} Recent Delivery Logs", desc)
     await interaction.response.send_message(embed=embed, ephemeral=True)
+    
+    # Log to webhook
+    await log_to_webhook(
+        title="📋 Logs Accessed",
+        description="Recent delivery logs viewed",
+        color=0x0099ff,
+        fields=[
+            {"name": "Accessed By", "value": f"{interaction.user.mention} ({interaction.user.id})", "inline": True}
+        ]
+    )
 
 
 @bot.tree.command(name="userhistory",
@@ -379,6 +649,18 @@ async def userhistory(interaction: discord.Interaction, user: discord.User):
     embed = create_styled_embed(
         f"{CONFIG['EMOJIS']['user']} History for {user.name}", desc)
     await interaction.response.send_message(embed=embed, ephemeral=True)
+    
+    # Log to webhook
+    await log_to_webhook(
+        title="👤 User History Accessed",
+        description=f"History checked for user",
+        color=0x0099ff,
+        fields=[
+            {"name": "Target User", "value": f"{user.mention} ({user.id})", "inline": True},
+            {"name": "Total Keys", "value": str(len(history)), "inline": True},
+            {"name": "Accessed By", "value": f"{interaction.user.mention} ({interaction.user.id})", "inline": False}
+        ]
+    )
 
 
 @bot.event
