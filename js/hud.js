@@ -120,8 +120,9 @@ class HUD {
     if (infos.length === 0) { el.style.display = 'none'; return; }
     el.style.display = 'block';
     el.innerHTML = infos.map(m => {
-      const pct = (m.hp / m.maxHp * 100).toFixed(0);
-      const barColor = m.hp / m.maxHp > 0.5 ? '#4CAF50' : m.hp / m.maxHp > 0.25 ? '#FFA500' : '#F44336';
+      const healthRatio = m.hp / m.maxHp;
+      const pct = (healthRatio * 100).toFixed(0);
+      const barColor = healthRatio > 0.5 ? '#4CAF50' : healthRatio > 0.25 ? '#FFA500' : '#F44336';
       return `<div class="mob-row">
         <span class="mob-name">${m.name}</span>
         <div class="mob-hp-bar"><div class="mob-hp-fill" style="width:${pct}%;background:${barColor}"></div></div>

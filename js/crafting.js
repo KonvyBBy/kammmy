@@ -42,14 +42,14 @@ const RECIPES = (() => {
       [B.OAK_PLANKS, B.OAK_PLANKS, B.OAK_PLANKS],
       [B.OAK_PLANKS, 0,            B.OAK_PLANKS],
       [B.OAK_PLANKS, B.OAK_PLANKS, B.OAK_PLANKS],
-    ], B.MOSSY_COBBLE, 8, 'Chest (Mossy)'),
+    ], B.MOSSY_COBBLE, 8, 'Mossy Cobblestone'),
 
     /* ── Stone ─────────────────────────────────────────────────── */
     shaped([
       [B.COBBLESTONE, B.COBBLESTONE, B.COBBLESTONE],
       [B.COBBLESTONE, 0,             B.COBBLESTONE],
       [B.COBBLESTONE, B.COBBLESTONE, B.COBBLESTONE],
-    ], B.STONE, 8, 'Stone Bricks'),
+    ], B.COBBLESTONE, 8, 'Cobblestone Ring'),
 
     /* ── Blocks ─────────────────────────────────────────────────── */
     shaped([

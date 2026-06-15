@@ -256,7 +256,7 @@ class Mob {
     }
 
     /* Daytime burn for night-only mobs */
-    if (def.nightOnly && daylight > 0.5 && isNight === false) {
+    if (def.nightOnly && daylight > 0.5) {
       this.hp -= dt * 1.5;
     }
 

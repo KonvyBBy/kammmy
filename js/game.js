@@ -121,7 +121,6 @@ class Game {
       if (e.code === 'KeyE' && this.running) {
         if (this._crafting.open) {
           this._crafting.close();
-          document.exitPointerLock();
           document.body.requestPointerLock();
         } else {
           this._crafting.show();
