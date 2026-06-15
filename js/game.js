@@ -78,8 +78,18 @@ class Game {
     // Player
     this._player = new Player(this._camera, this._world);
 
+    // Mob manager
+    this._mobs = new MobManager(this._scene, this._world);
+
+    // Wire player attack to mob hit detection
+    this._player.onAttackMob = (origin, dir) =>
+      this._mobs.tryAttack(origin, dir, 5.0, 5);
+
     // Sky
     this._sky = new Sky(this._scene, this._renderer);
+
+    // Crafting UI
+    this._crafting = new CraftingUI(this._player.inventory, this._atlasCanvas);
 
     // HUD
     this._hud = new HUD(this._player, this._world, this._sky);
@@ -104,9 +114,20 @@ class Game {
     // Keyboard shortcuts
     document.addEventListener('keydown', e => {
       if (e.code === 'Escape' && this.running) {
-        if (this.paused) this._resume(); else this._pause();
+        if (this._crafting.open) { this._crafting.close(); document.body.requestPointerLock(); }
+        else if (this.paused) this._resume(); else this._pause();
       }
       if (e.code === 'F3') this.debugMode = !this.debugMode;
+      if (e.code === 'KeyE' && this.running) {
+        if (this._crafting.open) {
+          this._crafting.close();
+          document.exitPointerLock();
+          document.body.requestPointerLock();
+        } else {
+          this._crafting.show();
+          document.exitPointerLock();
+        }
+      }
     });
 
     // UI buttons
@@ -198,7 +219,8 @@ class Game {
     this._player.update(dt);
     this._world.update(this._player.position.x, this._player.position.z);
     this._sky.update(dt, this._camera.position, this._ambientLight, this._sunLight);
-    this._hud.update(this.debugMode);
+    this._mobs.update(dt, this._player, this._sky);
+    this._hud.update(this.debugMode, this._mobs);
 
     // Render
     this._renderer.render(this._scene, this._camera);

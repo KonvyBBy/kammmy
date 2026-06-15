@@ -62,11 +62,12 @@ class HUD {
 
   /* ── Update ─────────────────────────────────────────────────────────────── */
 
-  update(debugMode) {
+  update(debugMode, mobManager) {
     this._updateHotbar();
     this._updateHealth();
     this._updateBreakOverlay();
     this._updateBlockHighlight();
+    if (mobManager) this._updateMobInfo(mobManager);
     if (debugMode) this._updateDebug();
     document.getElementById('debug').style.display = debugMode ? 'block' : 'none';
   }
@@ -81,23 +82,52 @@ class HUD {
       const canvas = slot.querySelector('canvas');
       if (!canvas || !this._atlasCanvas) continue;
 
-      const id = this.player.hotbar[i];
-      if (!id || !BLOCK_FACES[id]) continue;
+      const invSlot = this.player.inventory.slots[i];
+      const id = invSlot ? invSlot.id : 0;
 
-      // Draw the top face of the block
-      const tileIdx = BLOCK_FACES[id][2]; // top face
-      const ctx = canvas.getContext('2d');
-      const uv  = getTileUV(tileIdx);
-      const S   = ATLAS_TILE_SIZE;
-      const T   = ATLAS_TILES_ROW;
-      ctx.clearRect(0, 0, 36, 36);
-      ctx.imageSmoothingEnabled = false;
-      ctx.drawImage(
-        this._atlasCanvas,
-        uv.u * ATLAS_SIZE, uv.v * ATLAS_SIZE, S, S,
-        0, 0, 36, 36
-      );
+      if (!id || !BLOCK_FACES[id]) {
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, 36, 36);
+      } else {
+        const tileIdx = BLOCK_FACES[id][2]; // top face
+        const ctx = canvas.getContext('2d');
+        const uv  = getTileUV(tileIdx);
+        ctx.clearRect(0, 0, 36, 36);
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(
+          this._atlasCanvas,
+          uv.u * ATLAS_SIZE, uv.v * ATLAS_SIZE, ATLAS_TILE_SIZE, ATLAS_TILE_SIZE,
+          0, 0, 36, 36
+        );
+      }
+
+      // Show count badge
+      let countEl = slot.querySelector('.item-count');
+      if (!countEl) {
+        countEl = document.createElement('span');
+        countEl.className = 'item-count';
+        slot.appendChild(countEl);
+      }
+      const cnt = invSlot && !invSlot.empty ? invSlot.count : 0;
+      countEl.textContent = cnt > 1 ? cnt : '';
     }
+  }
+
+  _updateMobInfo(mobManager) {
+    let el = document.getElementById('mob-info');
+    if (!el) return;
+    const infos = mobManager.getNearbyInfo(this.player.position, 20);
+    if (infos.length === 0) { el.style.display = 'none'; return; }
+    el.style.display = 'block';
+    el.innerHTML = infos.map(m => {
+      const pct = (m.hp / m.maxHp * 100).toFixed(0);
+      const barColor = m.hp / m.maxHp > 0.5 ? '#4CAF50' : m.hp / m.maxHp > 0.25 ? '#FFA500' : '#F44336';
+      return `<div class="mob-row">
+        <span class="mob-name">${m.name}</span>
+        <div class="mob-hp-bar"><div class="mob-hp-fill" style="width:${pct}%;background:${barColor}"></div></div>
+        <span class="mob-hp-text">${m.hp}/${m.maxHp}</span>
+      </div>`;
+    }).join('');
   }
 
   _updateHealth() {

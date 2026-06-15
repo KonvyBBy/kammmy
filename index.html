@@ -210,6 +210,121 @@
       display: none;
       z-index: 5;
     }
+
+    /* Item count badge on hotbar */
+    .item-count {
+      position: absolute; bottom: 2px; right: 4px;
+      font-size: 10px; color: #fff;
+      text-shadow: 1px 1px 0 #000;
+      pointer-events: none;
+    }
+
+    /* ── Mob info panel ──────────────────────────────────────────────────── */
+    #mob-info {
+      position: fixed; top: 10px; right: 10px;
+      min-width: 180px;
+      background: rgba(0,0,0,0.55);
+      border: 1px solid rgba(255,255,255,0.2);
+      border-radius: 4px;
+      padding: 6px 10px;
+      display: none;
+      z-index: 10;
+      pointer-events: none;
+    }
+    .mob-row { display: flex; align-items: center; gap: 6px; margin: 3px 0; }
+    .mob-name { color: #fff; font-size: 11px; min-width: 60px; text-shadow: 1px 1px 0 #000; }
+    .mob-hp-bar { flex: 1; height: 6px; background: #333; border-radius: 2px; overflow: hidden; }
+    .mob-hp-fill { height: 100%; transition: width 0.2s; border-radius: 2px; }
+    .mob-hp-text { color: #ccc; font-size: 10px; min-width: 30px; text-align: right; }
+
+    /* ── Crafting / Inventory overlay ────────────────────────────────────── */
+    #crafting-overlay {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.75);
+      display: none;
+      align-items: center; justify-content: center;
+      z-index: 100;
+      user-select: none;
+    }
+    #crafting-panel {
+      background: #2a2a2a;
+      border: 2px solid #555;
+      border-radius: 6px;
+      padding: 20px 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      min-width: 560px;
+      max-width: 95vw;
+      max-height: 90vh;
+      overflow-y: auto;
+      color: #ddd;
+      font-family: 'Courier New', monospace;
+    }
+    #crafting-panel h2 {
+      margin: 0; color: #4caf50; font-size: 18px; letter-spacing: 2px;
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    #crafting-close {
+      background: none; border: 1px solid #666; color: #ccc;
+      padding: 2px 10px; cursor: pointer; font-family: inherit; font-size: 14px;
+      border-radius: 2px;
+    }
+    #crafting-close:hover { background: #444; }
+
+    /* Crafting area */
+    .craft-area {
+      display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+    }
+    .craft-grid {
+      display: grid; grid-template-columns: repeat(3, 52px); gap: 3px;
+    }
+    .craft-arrow { font-size: 28px; color: #888; }
+    .craft-output-wrap { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+    .craft-output-label { font-size: 11px; color: #888; }
+
+    /* Generic inventory slot */
+    .inv-slot-el {
+      width: 52px; height: 52px;
+      background: rgba(80,80,80,0.6);
+      border: 2px solid rgba(160,160,160,0.4);
+      display: flex; align-items: center; justify-content: center;
+      position: relative;
+      border-radius: 2px;
+      cursor: pointer;
+      transition: border-color 0.1s;
+    }
+    .inv-slot-el:hover { border-color: #fff; }
+    .inv-slot-el canvas { width: 36px; height: 36px; image-rendering: pixelated; }
+    .slot-count {
+      position: absolute; bottom: 2px; right: 4px;
+      font-size: 10px; color: #fff; text-shadow: 1px 1px 0 #000; pointer-events: none;
+    }
+    .inv-selected { border-color: rgba(255,255,100,0.6) !important; }
+
+    /* Inventory grid sections */
+    .inv-section-label { font-size: 11px; color: #888; margin-bottom: 4px; }
+    .inv-grid-main {
+      display: grid; grid-template-columns: repeat(9, 52px); gap: 3px;
+    }
+    .inv-grid-hotbar {
+      display: grid; grid-template-columns: repeat(9, 52px); gap: 3px;
+      margin-top: 6px; padding-top: 6px;
+      border-top: 1px solid #444;
+    }
+
+    /* Floating cursor item */
+    #craft-cursor {
+      position: fixed; pointer-events: none; z-index: 200;
+      width: 52px; height: 52px; display: none;
+      align-items: center; justify-content: center; position: fixed;
+      transform: translate(-50%, -50%);
+    }
+    #craft-cursor canvas { width: 36px; height: 36px; image-rendering: pixelated; }
+
+    /* Controls hint */
+    .craft-hint { font-size: 11px; color: #666; }
+    .craft-hint span { color: #999; }
   </style>
 </head>
 <body>
@@ -232,7 +347,7 @@
     <span>MOUSE</span> Look &nbsp;|&nbsp; <span>LEFT CLICK</span> Break block<br>
     <span>RIGHT CLICK</span> Place block &nbsp;|&nbsp; <span>1–9</span> Select hotbar slot<br>
     <span>CTRL</span> Sprint &nbsp;|&nbsp; <span>F</span> Toggle fly &nbsp;|&nbsp;
-    <span>F3</span> Debug overlay &nbsp;|&nbsp; <span>ESC</span> Pause
+    <span>F3</span> Debug overlay &nbsp;|&nbsp; <span>E</span> Crafting/Inventory &nbsp;|&nbsp; <span>ESC</span> Pause
   </div>
 </div>
 
@@ -262,6 +377,55 @@
 <!-- ── Water overlay ────────────────────────────────────────────────────────── -->
 <div id="water-overlay"></div>
 
+<!-- ── Mob info panel ──────────────────────────────────────────────────────── -->
+<div id="mob-info"></div>
+
+<!-- ── Crafting / Inventory Overlay ────────────────────────────────────────── -->
+<div id="crafting-overlay">
+  <div id="crafting-panel">
+    <h2>⚒ CRAFTING &amp; INVENTORY
+      <button id="crafting-close">✕ Close (E)</button>
+    </h2>
+
+    <!-- Crafting area -->
+    <div class="craft-area">
+      <div>
+        <div class="inv-section-label">Crafting Grid (3×3)</div>
+        <div class="craft-grid" id="craft-grid">
+          <!-- 9 slots generated below -->
+        </div>
+      </div>
+      <div class="craft-arrow">➜</div>
+      <div class="craft-output-wrap">
+        <div class="craft-output-label">Output</div>
+        <div class="inv-slot-el" id="craft-output" style="border-color:#4caf50">
+          <canvas width="36" height="36"></canvas>
+          <span class="slot-count"></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Inventory -->
+    <div>
+      <div class="inv-section-label">Inventory</div>
+      <div class="inv-grid-main" id="inv-grid-main"></div>
+      <div class="inv-grid-hotbar" id="inv-grid-hotbar"></div>
+    </div>
+
+    <div class="craft-hint">
+      <span>Left-click</span> pick up / place &nbsp;|&nbsp;
+      <span>Right-click</span> split stack &nbsp;|&nbsp;
+      <span>E</span> close
+    </div>
+  </div>
+</div>
+
+<!-- ── Floating cursor item ─────────────────────────────────────────────────── -->
+<div id="craft-cursor">
+  <canvas width="36" height="36"></canvas>
+  <span class="slot-count"></span>
+</div>
+
 <!-- ── Scripts ──────────────────────────────────────────────────────────────── -->
 <!-- Three.js -->
 <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
@@ -272,10 +436,56 @@
 <script src="js/terrain.js"></script>
 <script src="js/chunk.js"></script>
 <script src="js/world.js"></script>
+<script src="js/inventory.js"></script>
+<script src="js/crafting.js"></script>
+<script src="js/mobs.js"></script>
 <script src="js/player.js"></script>
 <script src="js/sky.js"></script>
 <script src="js/hud.js"></script>
 <script src="js/game.js"></script>
+
+<script>
+// Build crafting overlay slots dynamically
+(function() {
+  // Craft grid slots
+  const grid = document.getElementById('craft-grid');
+  for (let i = 0; i < 9; i++) {
+    const d = document.createElement('div');
+    d.className = 'inv-slot-el';
+    d.id = `craft-slot-${i}`;
+    d.innerHTML = '<canvas width="36" height="36"></canvas><span class="slot-count"></span>';
+    grid.appendChild(d);
+  }
+
+  // Inventory main (slots 9-35)
+  const main = document.getElementById('inv-grid-main');
+  for (let i = 9; i < 36; i++) {
+    const d = document.createElement('div');
+    d.className = 'inv-slot-el';
+    d.id = `inv-slot-${i}`;
+    d.innerHTML = '<canvas width="36" height="36"></canvas><span class="slot-count"></span>';
+    main.appendChild(d);
+  }
+
+  // Hotbar (slots 0-8)
+  const hotbar = document.getElementById('inv-grid-hotbar');
+  for (let i = 0; i < 9; i++) {
+    const d = document.createElement('div');
+    d.className = 'inv-slot-el';
+    d.id = `inv-slot-${i}`;
+    d.innerHTML = '<canvas width="36" height="36"></canvas><span class="slot-count"></span>';
+    hotbar.appendChild(d);
+  }
+
+  // Move cursor with mouse inside crafting overlay
+  const overlay = document.getElementById('crafting-overlay');
+  const cursor  = document.getElementById('craft-cursor');
+  overlay.addEventListener('mousemove', e => {
+    cursor.style.left = e.clientX + 'px';
+    cursor.style.top  = e.clientY + 'px';
+  });
+})();
+</script>
 
 </body>
 </html>
