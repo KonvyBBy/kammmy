@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VoxelCraft — Minecraft Clone</title>
+  <style>
+    /* ── Reset & base ─────────────────────────────────────────────────────── */
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #000; }
+    body { font-family: 'Courier New', monospace; cursor: none; }
+
+    /* ── Loading screen ───────────────────────────────────────────────────── */
+    #loading {
+      position: fixed; inset: 0;
+      background: #1a1a2e;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      z-index: 200;
+      gap: 16px;
+    }
+    #loading-logo {
+      font-size: 52px; font-weight: bold;
+      color: #4caf50;
+      text-shadow: 3px 3px 0 #2a5c2a, 6px 6px 0 #1a3c1a;
+      letter-spacing: 3px;
+    }
+    #loading-sub { color: #888; font-size: 14px; letter-spacing: 2px; }
+    #loading-bar-bg {
+      width: 320px; height: 22px;
+      border: 2px solid #444;
+      background: #222;
+      border-radius: 2px;
+      overflow: hidden;
+    }
+    #loading-bar {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, #2e7d32, #66bb6a, #2e7d32);
+      background-size: 200% 100%;
+      animation: shimmer 1.5s infinite linear;
+      transition: width 0.15s ease;
+    }
+    @keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+    #loading-text { color: #aaa; font-size: 13px; }
+
+    /* ── Three.js canvas ──────────────────────────────────────────────────── */
+    canvas { display: block; }
+
+    /* ── Overlay base ─────────────────────────────────────────────────────── */
+    .overlay {
+      position: fixed; inset: 0;
+      display: none; flex-direction: column;
+      align-items: center; justify-content: center;
+      z-index: 50;
+    }
+
+    /* ── Menu ─────────────────────────────────────────────────────────────── */
+    #menu {
+      background: linear-gradient(180deg, rgba(10,20,40,0.96) 0%, rgba(5,15,30,0.98) 100%);
+    }
+    #menu-title {
+      font-size: 64px; font-weight: bold;
+      color: #4caf50;
+      text-shadow: 4px 4px 0 #1a4a1a, 8px 8px 0 #0a2a0a;
+      letter-spacing: 4px;
+      margin-bottom: 8px;
+    }
+    #menu-subtitle { color: #66bb6a; font-size: 14px; letter-spacing: 3px; margin-bottom: 50px; }
+    .menu-btn {
+      padding: 13px 52px;
+      margin: 7px;
+      font-size: 17px; font-weight: bold;
+      font-family: inherit;
+      letter-spacing: 2px;
+      background: rgba(60,60,60,0.85);
+      color: #e8e8e8;
+      border: 2px solid #666;
+      cursor: pointer;
+      transition: background 0.1s, border-color 0.1s, transform 0.1s;
+      text-shadow: 1px 1px 0 #000;
+    }
+    .menu-btn:hover  { background: rgba(100,100,100,0.9); border-color: #fff; transform: scale(1.04); }
+    .menu-btn:active { transform: scale(0.98); }
+    .menu-btn.primary { background: rgba(40,90,40,0.9); border-color: #4caf50; }
+    .menu-btn.primary:hover { background: rgba(60,130,60,0.9); }
+    #menu-controls {
+      margin-top: 36px;
+      color: #666;
+      font-size: 12px;
+      text-align: center;
+      line-height: 2;
+      letter-spacing: 1px;
+    }
+    #menu-controls span { color: #999; }
+
+    /* ── Pause menu ───────────────────────────────────────────────────────── */
+    #pause { background: rgba(0,0,0,0.65); backdrop-filter: blur(3px); }
+    #pause h2 { font-size: 36px; color: #e8e8e8; margin-bottom: 30px; letter-spacing: 3px; }
+
+    /* ── Death screen ─────────────────────────────────────────────────────── */
+    #death { background: rgba(80,0,0,0.75); backdrop-filter: blur(3px); }
+    #death h1 { font-size: 52px; color: #ff4444; margin-bottom: 12px; text-shadow: 2px 2px 0 #800; letter-spacing: 3px; }
+    #death p  { color: #ffaaaa; font-size: 16px; margin-bottom: 30px; }
+
+    /* ── HUD ──────────────────────────────────────────────────────────────── */
+    #hud { position: fixed; inset: 0; pointer-events: none; z-index: 10; display: none; }
+
+    /* Crosshair */
+    #crosshair {
+      position: fixed; top: 50%; left: 50%;
+      width: 0; height: 0;
+      pointer-events: none;
+    }
+    #crosshair::before, #crosshair::after {
+      content: ''; position: absolute;
+      background: rgba(255,255,255,0.9);
+      box-shadow: 0 0 2px rgba(0,0,0,0.8);
+    }
+    #crosshair::before { width: 2px; height: 20px; left: -1px; top: -10px; }
+    #crosshair::after  { width: 20px; height: 2px; left: -10px; top: -1px; }
+
+    /* Health bar */
+    #health {
+      position: fixed;
+      bottom: 78px; left: 50%;
+      transform: translateX(-50%);
+      display: flex; gap: 3px;
+    }
+    .heart {
+      width: 18px; height: 18px;
+      font-size: 15px;
+      transition: color 0.2s;
+      filter: drop-shadow(1px 1px 0 #000);
+    }
+
+    /* Hotbar */
+    #hotbar {
+      position: fixed;
+      bottom: 14px; left: 50%;
+      transform: translateX(-50%);
+      display: flex; gap: 3px;
+      padding: 3px;
+      background: rgba(0,0,0,0.35);
+      border-radius: 3px;
+    }
+    .hotbar-slot {
+      width: 52px; height: 52px;
+      background: rgba(80,80,80,0.6);
+      border: 2px solid rgba(160,160,160,0.5);
+      display: flex; align-items: center; justify-content: center;
+      position: relative;
+      border-radius: 2px;
+      transition: border-color 0.1s;
+    }
+    .hotbar-slot.selected {
+      border-color: #fff;
+      border-width: 3px;
+      background: rgba(120,120,120,0.7);
+    }
+    .hotbar-slot canvas {
+      width: 38px; height: 38px;
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+    }
+    .slot-num {
+      position: absolute; top: 2px; left: 3px;
+      font-size: 9px; color: rgba(255,255,255,0.7);
+      text-shadow: 1px 1px 0 #000;
+      pointer-events: none;
+    }
+
+    /* Debug overlay */
+    #debug {
+      position: fixed; top: 6px; left: 6px;
+      color: #fff;
+      font-size: 12px;
+      background: rgba(0,0,0,0.5);
+      padding: 6px 10px;
+      display: none;
+      line-height: 1.6;
+      border-radius: 2px;
+      text-shadow: 1px 1px 0 #000;
+    }
+
+    /* Break progress */
+    #break-overlay {
+      position: fixed;
+      top: calc(50% + 28px); left: 50%;
+      transform: translateX(-50%);
+      width: 110px; height: 8px;
+      background: rgba(0,0,0,0.55);
+      border: 1px solid rgba(255,255,255,0.4);
+      display: none;
+      border-radius: 1px;
+    }
+    #break-progress {
+      height: 100%;
+      background: linear-gradient(90deg, #e65100, #ff9800);
+      width: 0%;
+      transition: width 0.05s linear;
+      border-radius: 1px;
+    }
+
+    /* In-water tint */
+    #water-overlay {
+      position: fixed; inset: 0;
+      background: rgba(20, 80, 200, 0.35);
+      pointer-events: none;
+      display: none;
+      z-index: 5;
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── Loading Screen ───────────────────────────────────────────────────────── -->
+<div id="loading">
+  <div id="loading-logo">⛏ VOXELCRAFT</div>
+  <div id="loading-sub">A MINECRAFT-INSPIRED VOXEL WORLD</div>
+  <div id="loading-bar-bg"><div id="loading-bar"></div></div>
+  <div id="loading-text">Initializing…</div>
+</div>
+
+<!-- ── Main Menu ────────────────────────────────────────────────────────────── -->
+<div id="menu" class="overlay">
+  <div id="menu-title">⛏ VOXELCRAFT</div>
+  <div id="menu-subtitle">INFINITE VOXEL WORLDS</div>
+  <button class="menu-btn primary" id="btn-play">▶ &nbsp; Play</button>
+  <div id="menu-controls">
+    <span>WASD</span> Move &nbsp;|&nbsp; <span>SPACE</span> Jump &nbsp;|&nbsp;
+    <span>MOUSE</span> Look &nbsp;|&nbsp; <span>LEFT CLICK</span> Break block<br>
+    <span>RIGHT CLICK</span> Place block &nbsp;|&nbsp; <span>1–9</span> Select hotbar slot<br>
+    <span>CTRL</span> Sprint &nbsp;|&nbsp; <span>F</span> Toggle fly &nbsp;|&nbsp;
+    <span>F3</span> Debug overlay &nbsp;|&nbsp; <span>ESC</span> Pause
+  </div>
+</div>
+
+<!-- ── Pause Menu ───────────────────────────────────────────────────────────── -->
+<div id="pause" class="overlay">
+  <h2>⏸ PAUSED</h2>
+  <button class="menu-btn primary" id="btn-resume">▶ &nbsp; Resume</button>
+  <button class="menu-btn" id="btn-menu">◀ &nbsp; Main Menu</button>
+</div>
+
+<!-- ── Death Screen ─────────────────────────────────────────────────────────── -->
+<div id="death" class="overlay">
+  <h1>☠ You Died!</h1>
+  <p>You fell too far into the void…</p>
+  <button class="menu-btn primary" id="btn-respawn">↺ &nbsp; Respawn</button>
+</div>
+
+<!-- ── HUD ──────────────────────────────────────────────────────────────────── -->
+<div id="hud">
+  <div id="crosshair"></div>
+  <div id="health"></div>
+  <div id="hotbar"></div>
+  <div id="debug"></div>
+  <div id="break-overlay"><div id="break-progress"></div></div>
+</div>
+
+<!-- ── Water overlay ────────────────────────────────────────────────────────── -->
+<div id="water-overlay"></div>
+
+<!-- ── Scripts ──────────────────────────────────────────────────────────────── -->
+<!-- Three.js -->
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+
+<!-- Game modules (order matters) -->
+<script src="js/noise.js"></script>
+<script src="js/blocks.js"></script>
+<script src="js/terrain.js"></script>
+<script src="js/chunk.js"></script>
+<script src="js/world.js"></script>
+<script src="js/player.js"></script>
+<script src="js/sky.js"></script>
+<script src="js/hud.js"></script>
+<script src="js/game.js"></script>
+
+</body>
+</html>
