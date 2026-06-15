@@ -513,9 +513,13 @@ function generateTextureAtlas() {
 /** Get UV coords for a tile index (returns {u, v, size}) */
 function getTileUV(tileIdx) {
   const size = 1 / ATLAS_TILES_ROW;
+  // Three.js CanvasTexture uses flipY=true by default, which means v=0 is the
+  // canvas bottom.  Tiles are drawn at the canvas top, so we must flip the row
+  // index: row 0 → v = 1 - size, row 1 → v = 1 - 2*size, etc.
+  const row = Math.floor(tileIdx / ATLAS_TILES_ROW);
   return {
     u: (tileIdx % ATLAS_TILES_ROW) * size,
-    v: Math.floor(tileIdx / ATLAS_TILES_ROW) * size,
+    v: 1 - (row + 1) * size,
     size,
   };
 }
