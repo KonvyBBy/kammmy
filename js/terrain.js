@@ -6,6 +6,9 @@ const CHUNK_SIZE   = 16;
 const CHUNK_HEIGHT = 128;
 const SEA_LEVEL    = 58;
 
+/** Offset applied to humidity noise sampling to decorrelate it from temperature */
+const HUMIDITY_NOISE_OFFSET = 500;
+
 class TerrainGenerator {
   constructor(seed) {
     this.seed     = seed;
@@ -25,7 +28,7 @@ class TerrainGenerator {
 
   getBiome(wx, wz) {
     const temp  = (this.tempN.noise2D(wx * 0.0015, wz * 0.0015) * 0.5 + 0.5);
-    const humid = (this.humidN.noise2D(wx * 0.0015 + 500, wz * 0.0015 + 500) * 0.5 + 0.5);
+    const humid = (this.humidN.noise2D(wx * 0.0015 + HUMIDITY_NOISE_OFFSET, wz * 0.0015 + HUMIDITY_NOISE_OFFSET) * 0.5 + 0.5);
 
     if (temp < 0.28)          return humid < 0.5 ? 'tundra'   : 'snowy_taiga';
     if (temp > 0.72)          return humid < 0.40 ? 'desert'  : 'jungle';
@@ -260,7 +263,9 @@ class TerrainGenerator {
   }
 
   _placeCactus(blocks, lx, ly, lz) {
-    const h = 2 + Math.floor(Math.random() * 3);
+    // Use noise-based height so cactus is deterministic per world seed
+    const heightNoise = (this.featN.noise2D(lx * 1.7 + 200, lz * 1.7 + 200) + 1) / 2;
+    const h = 2 + Math.floor(heightNoise * 3);
     for (let i = 0; i < h; i++) {
       if (ly + i < CHUNK_HEIGHT) blocks[_idx(lx, ly + i, lz)] = BlockType.CACTUS;
     }

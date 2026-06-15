@@ -2,7 +2,7 @@
  * World — manages chunks, materials, and global block access
  */
 
-const RENDER_DISTANCE = 7;   // chunks in each direction
+const RENDER_DISTANCE = 7;   // chunk radius (chunks from center in each axis direction)
 const BUILD_DISTANCE  = RENDER_DISTANCE + 1;
 
 class World {
