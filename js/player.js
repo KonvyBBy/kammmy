@@ -39,8 +39,38 @@ class Player {
     this.maxHealth  = MAX_HEALTH;
     this.invincible = 0; // invincibility frames
 
-    this.hotbar    = DEFAULT_HOTBAR.slice();
-    this.hotbarSel = 0;
+    // Inventory (36 slots: 0-8 hotbar, 9-35 main)
+    this.inventory  = new Inventory(36);
+    this.hotbarSel  = 0;
+    // Pre-fill hotbar with starter blocks (64 each)
+    DEFAULT_HOTBAR.forEach((id, i) => {
+      this.inventory.slots[i].id    = id;
+      this.inventory.slots[i].count = 64;
+    });
+    // Give some extra blocks for building
+    [[BlockType.OAK_LOG,   9,  32],
+     [BlockType.COBBLESTONE,10,32],
+     [BlockType.GLASS,    11,  16],
+     [BlockType.OAK_PLANKS,12, 32],
+     [BlockType.GRAVEL,   13,  16],
+    ].forEach(([id, slot, cnt]) => {
+      this.inventory.slots[slot].id    = id;
+      this.inventory.slots[slot].count = cnt;
+    });
+
+    // Mob attack cooldown
+    this._attackCooldown = 0;
+    // Callback set by game.js to hit mobs
+    this.onAttackMob = null;
+
+    // Legacy: keep hotbar getter for HUD compatibility
+    this.hotbar = new Proxy(this.inventory.slots, {
+      get: (slots, prop) => {
+        const i = parseInt(prop);
+        if (!isNaN(i) && i >= 0 && i < 9) return slots[i].id;
+        return slots[prop];
+      }
+    });
 
     // Block breaking
     this.breaking     = null; // {x,y,z}
@@ -275,6 +305,21 @@ class Player {
       this.breaking = null;
       return;
     }
+
+    // Check mob attack first
+    if (this._attackCooldown > 0) {
+      this._attackCooldown -= dt;
+    } else if (this.onAttackMob) {
+      const dir = new THREE.Vector3();
+      this.camera.getWorldDirection(dir);
+      if (this.onAttackMob(this.camera.position, dir)) {
+        this._attackCooldown = 0.5;
+        this.breakProgress = 0;
+        this.breaking = null;
+        return;
+      }
+    }
+
     const hit = this._getLookTarget();
     if (!hit) { this.breakProgress = 0; this.breaking = null; return; }
 
@@ -296,6 +341,8 @@ class Player {
     this.breakProgress += dt / Math.max(0.1, hardness * 0.5);
     if (this.breakProgress >= 1) {
       this.world.setBlock(x, y, z, BlockType.AIR);
+      // Add broken block to inventory
+      if (id !== BlockType.BEDROCK) this.inventory.add(id, 1);
       this.breakProgress = 0;
       this.breaking = null;
     }
@@ -314,9 +361,10 @@ class Player {
         py + 1 > this.position.y       && py < this.position.y + PLAYER_HEIGHT &&
         pz + 1 > this.position.z - hw && pz < this.position.z + hw) return;
 
-    const sel = this.hotbar[this.hotbarSel];
-    if (sel && sel !== BlockType.AIR) {
+    const sel = this.inventory.selectedId(this.hotbarSel);
+    if (sel && sel !== BlockType.AIR && this.inventory.has(sel)) {
       this.world.setBlock(px, py, pz, sel);
+      this.inventory.consumeSelected(this.hotbarSel);
     }
   }
 
